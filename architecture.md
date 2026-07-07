@@ -1,26 +1,26 @@
-# Architecture notes: Decogramy
+# Notas de arquitetura: Decogramy
 
-## Goals
+## Objetivos
 
-- Build a small Instagram-like app focused only on photos.
-- Include the basic product flow: register/login, public profiles, photo grid, upload, feed, likes, follow/unfollow and notifications.
-- Keep PostgreSQL as the source of truth.
-- Move non-critical work to a worker process: thumbnails, cleanup and notification fan-out.
-- Run everything locally with Docker Compose using PostgreSQL, Redis, RabbitMQ and MinIO.
-- Use MinIO in the demo as the local equivalent of object storage such as Cloudflare R2/S3.
+- Construir um app pequeno no estilo Instagram, focado apenas em fotos.
+- Incluir o fluxo básico do produto: cadastro/login, perfis públicos, grid de fotos, upload, feed, likes, follow/unfollow e notificações.
+- Manter o PostgreSQL como fonte de verdade.
+- Mover trabalho não crítico para um processo worker: thumbnails, limpeza e fan-out de notificações.
+- Rodar tudo localmente com Docker Compose usando PostgreSQL, Redis, RabbitMQ e MinIO.
+- Usar o MinIO como equivalente local de object storage, como Cloudflare R2/S3.
 
-## Out of scope
+## Fora do escopo
 
-- No private accounts or private posts.
-- No video, livestreaming, stories, direct messages, or recommendations.
-- No MongoDB.
-- No PostgreSQL replicas, database redundancy, or high-availability setup.
-- No Cloudflare Workers.
-- No email verification for registration.
+- Sem contas privadas ou posts privados.
+- Sem vídeo, livestreaming, stories, mensagens diretas ou recomendações.
+- Sem MongoDB.
+- Sem réplicas PostgreSQL, redundância de banco ou configuração de alta disponibilidade.
+- Sem Cloudflare Workers.
+- Sem verificação de e-mail no cadastro.
 
-## Technology stack and repository layout
+## Stack de tecnologia e estrutura do repositório
 
-Repository layout:
+Estrutura do repositório:
 
 ```text
 apps/
@@ -28,20 +28,20 @@ apps/
   worker/    NestJS worker process for outbox publishing and async consumers
   web/       React/Vite frontend
 packages/
-  shared/    Optional shared DTOs/types/constants
+  shared/    DTOs/tipos/constantes compartilhados opcionais
 ```
 
-Core components:
+Componentes principais:
 
 - Frontend: React + Vite.
-- Backend: NestJS, with API and worker as separate processes in one codebase/repository.
-- Database: PostgreSQL via Prisma, source of truth for users, posts, likes, comments, follows, notifications, sessions, and outbox state.
-- Cache/coordination: Redis for non-critical cache, rate limiting, and Redis Pub/Sub for SSE fanout across API instances.
-- Queue/events: RabbitMQ for asynchronous work and internal domain events.
-- Object storage: MinIO locally. It conceptually represents Cloudflare R2 for the presentation.
-- Image processing: Sharp in the worker for thumbnail generation.
+- Backend: NestJS, com API e worker como processos separados no mesmo código/repositório.
+- Banco de dados: PostgreSQL via Prisma, fonte de verdade para usuários, posts, likes, comentários, follows, notificações, sessões e estado da outbox.
+- Cache/coordenação: Redis para cache não crítico, rate limiting e Redis Pub/Sub para fanout de SSE entre instâncias da API.
+- Filas/eventos: RabbitMQ para trabalho assíncrono e eventos internos de domínio.
+- Object storage: MinIO localmente, representando o papel de um serviço como Cloudflare R2/S3.
+- Processamento de imagem: Sharp no worker para geração de thumbnails.
 
-## Architecture diagram
+## Diagrama de arquitetura
 
 ```mermaid
 flowchart LR
@@ -73,199 +73,199 @@ flowchart LR
   Redis -->|Pub/Sub fanout| API
 ```
 
-## Service responsibilities
+## Responsabilidades dos serviços
 
-### Web app
+### Aplicação web
 
-- Registration and login forms.
-- Public profile pages and profile photo grid.
-- Home feed with cursor pagination.
-- Photo upload flow using API-created post and direct signed URL upload.
-- Like, comment, follow/unfollow interactions.
-- SSE connection for lightweight live notifications.
+- Formulários de cadastro e login.
+- Páginas públicas de perfil e grid de fotos do perfil.
+- Home feed com paginação por cursor.
+- Fluxo de upload de foto usando post criado pela API e upload direto por URL assinada.
+- Interações de like, comentário e follow/unfollow.
+- Conexão SSE para notificações leves em tempo real.
 
-### API process
+### Processo API
 
-- Exposes REST endpoints and SSE endpoints.
-- Validates requests using `ValidationPipe`, `class-validator`, and `class-transformer`.
-- Provides Swagger/OpenAPI documentation if it is enabled for the demo.
-- Handles authentication with JWT access tokens. The original design included refresh token rotation, but the reduced MVP can run with a single JWT.
-- Performs transactional writes to PostgreSQL.
-- Creates notification rows in the main transaction for relevant user actions.
-- Writes `outbox_events` in the same PostgreSQL transaction as domain changes.
-- Creates signed upload URLs for MinIO/R2 after validating declared MIME type and size.
-- Verifies the uploaded object exists during finalize before publishing the post.
-- Applies Redis-backed rate limits where configured.
+- Expõe endpoints REST e endpoints SSE.
+- Valida requisições com `ValidationPipe`, `class-validator` e `class-transformer`.
+- Fornece documentação Swagger/OpenAPI se estiver habilitada no ambiente local.
+- Faz autenticação com tokens JWT de acesso. O desenho original previa rotação de refresh token, mas o MVP reduzido pode rodar com um único JWT.
+- Executa escritas transacionais no PostgreSQL.
+- Cria linhas de notificação na transação principal para ações relevantes do usuário.
+- Grava `outbox_events` na mesma transação PostgreSQL das mudanças de domínio.
+- Cria URLs assinadas de upload para MinIO/R2 depois de validar MIME type e tamanho declarados.
+- Verifica se o objeto enviado existe durante o finalize antes de publicar o post.
+- Aplica rate limits baseados em Redis onde configurado.
 
-### Worker process
+### Processo worker
 
-- Polls pending `outbox_events` and publishes them to RabbitMQ.
-- Consumes RabbitMQ domain events and jobs.
-- Generates thumbnails using Sharp.
-- Validates actual uploaded object metadata before processing.
-- Performs asynchronous MinIO cleanup for deleted/expired posts.
-- Publishes lightweight live notification messages to Redis Pub/Sub after consuming relevant domain events.
-- Uses `processed_events` for idempotent handlers.
-- Updates outbox publishing status and records failures.
+- Consulta `outbox_events` pendentes e publica no RabbitMQ.
+- Consome eventos de domínio e jobs do RabbitMQ.
+- Gera thumbnails usando Sharp.
+- Valida metadados reais do objeto enviado antes de processar.
+- Faz limpeza assíncrona no MinIO para posts apagados/expirados.
+- Publica mensagens leves de notificação ao vivo no Redis Pub/Sub depois de consumir eventos de domínio relevantes.
+- Usa `processed_events` para handlers idempotentes.
+- Atualiza o status de publicação da outbox e registra falhas.
 
 ### PostgreSQL
 
-- Source of truth for all core application state.
-- Stores users, posts, photos, follows, likes, comments, notifications, refresh sessions, outbox events, and processed event records.
+- Fonte de verdade para todo o estado central da aplicação.
+- Armazena usuários, posts, fotos, follows, likes, comentários, notificações, sessões de refresh, eventos de outbox e registros de eventos processados.
 
 ### Redis
 
-- Non-critical hot cache, especially for hot like counts; if unavailable, the API bypasses cache and reads PostgreSQL.
-- Rate limiting for auth, upload URL creation, comments, and likes.
-- Redis Pub/Sub bridge for live SSE notification fanout across API instances.
-- If Redis is unavailable, SSE live delivery is lost and MVP rate limiting fails open as an explicit availability tradeoff.
+- Cache quente não crítico, principalmente para contagens de likes; se estiver indisponível, a API ignora o cache e lê do PostgreSQL.
+- Rate limiting para auth, criação de URL de upload, comentários e likes.
+- Ponte Redis Pub/Sub para fanout de notificações SSE ao vivo entre instâncias da API.
+- Se o Redis cair, a entrega ao vivo via SSE é perdida e o rate limiting do MVP falha em modo aberto, como troca explícita por disponibilidade.
 
 ### RabbitMQ
 
-- Internal asynchronous domain event transport.
-- At-least-once delivery.
-- Supports delayed/backoff retries and dead-letter queues.
+- Transporte interno assíncrono de eventos de domínio.
+- Entrega at-least-once.
+- Suporta retries com atraso/backoff e dead-letter queues.
 
 ### MinIO / R2
 
-- Stores original uploaded images and generated thumbnails.
-- Local MVP uses MinIO.
-- Local MVP object URLs are public/readable for originals and thumbnails.
-- In the presentation, MinIO represents the R2/object-storage role and public object URLs represent the CDN-served media path.
+- Armazena imagens originais enviadas e thumbnails geradas.
+- O MVP local usa MinIO.
+- As URLs locais de objetos são públicas/legíveis para originais e thumbnails.
+- O MinIO representa o papel de R2/object-storage, e URLs públicas de objetos representam o caminho de mídia que poderia ser servido por CDN.
 
-## Data model outline
+## Visão geral do modelo de dados
 
-Main tables and fields:
+Principais tabelas e campos:
 
 - users: `id`, `email`, `username`, `password_hash`, `display_name`, `bio`, `created_at`, `updated_at`.
-  - `email` unique.
-  - `username` unique and immutable.
+  - `email` único.
+  - `username` único e imutável.
 - refresh_sessions: `id`, `user_id`, `token_hash`, `user_agent`, `ip_address`, `expires_at`, `revoked_at`, `created_at`, `rotated_at`.
 - posts: `id`, `user_id`, `caption`, `status`, `likes_count`, `comments_count`, `created_at`, `updated_at`, `deleted_at`.
   - `status`: `upload_pending | published | deleted | upload_expired`.
 - photos: `id`, `post_id`, `original_key`, `thumbnail_key`, `mime_type`, `size_bytes`, `thumbnail_status`, `created_at`, `updated_at`.
   - `thumbnail_status`: `pending | processing | ready | failed`.
 - follows: `follower_id`, `following_id`, `created_at`.
-  - Unique pair.
-  - Constraint/application check prevents self-follow.
+  - Par único.
+  - Constraint/verificação na aplicação impede seguir a si mesmo.
 - likes: `user_id`, `post_id`, `created_at`.
-  - Unique pair.
-  - `posts.likes_count` updated transactionally.
+  - Par único.
+  - `posts.likes_count` atualizado transacionalmente.
 - comments: `id`, `post_id`, `author_id`, `body`, `created_at`, `updated_at`, `deleted_at`.
-  - Flat comments only.
-  - Author can edit/delete own comments.
-  - Post owner can delete comments on own post but cannot edit them.
+  - Apenas comentários planos.
+  - Autor pode editar/apagar os próprios comentários.
+  - Dono do post pode apagar comentários no próprio post, mas não pode editá-los.
 - notifications: `id`, `user_id`, `actor_id`, `type`, `entity_type`, `entity_id`, `payload`, `read_at`, `created_at`.
 - outbox_events: `id`, `event_type`, `aggregate_type`, `aggregate_id`, `payload`, `status`, `attempts`, `next_attempt_at`, `locked_at`, `locked_by`, `last_error`, `created_at`, `published_at`.
   - `status`: `pending | processing | published | failed`.
-  - `failed` is for exhausted/non-retryable rows; RabbitMQ downtime leaves rows retryable with `next_attempt_at`.
+  - `failed` vale para linhas esgotadas/não retryable; queda do RabbitMQ mantém linhas retryable com `next_attempt_at`.
 - processed_events: `event_id`, `handler_name`, `processed_at`.
-  - Unique pair for idempotent consumers.
+  - Par único para consumidores idempotentes.
 
-## Key flows
+## Fluxos principais
 
-### Registration and login
+### Cadastro e login
 
-1. User registers with email, username and password.
-2. API validates unique email and username.
-3. Password is hashed with Argon2id.
-4. API creates user and initial refresh session in PostgreSQL.
-5. API returns JWT access token and sets refresh token in an `httpOnly` cookie.
-6. Access token is kept in frontend memory.
+1. Usuário se cadastra com e-mail, username e senha.
+2. API valida e-mail e username únicos.
+3. Senha é hasheada com Argon2id.
+4. API cria usuário e sessão inicial de refresh no PostgreSQL.
+5. API retorna JWT access token e define refresh token em um cookie `httpOnly`.
+6. Access token fica em memória no frontend.
 
-Refresh flow:
+Fluxo de refresh:
 
-1. Browser sends refresh token cookie.
-2. API verifies hashed refresh token session in PostgreSQL.
-3. API rotates refresh token on every refresh by revoking/replacing the session token hash.
-4. API returns a new access token and sets a new refresh cookie.
+1. Navegador envia o cookie de refresh token.
+2. API verifica no PostgreSQL a sessão do refresh token hasheado.
+3. API rotaciona o refresh token a cada refresh revogando/substituindo o hash do token da sessão.
+4. API retorna um novo access token e define um novo cookie de refresh.
 
-### Upload and publish photo
+### Upload e publicação de foto
 
-1. Frontend asks the API to create an upload with declared MIME type, extension and size.
-2. API allows only `image/jpeg`, `image/png`, and `image/webp`, maximum 10 MB based on declared metadata. Signed PUT size/content hints are not fully trusted.
-3. API creates a post with `posts.status = upload_pending` and a photo with `thumbnail_status = pending`.
-4. API controls object keys:
+1. Frontend pede à API a criação de um upload com MIME type, extensão e tamanho declarados.
+2. API aceita apenas `image/jpeg`, `image/png` e `image/webp`, máximo de 10 MB com base nos metadados declarados. Dicas de tamanho/conteúdo do PUT assinado não são totalmente confiáveis.
+3. API cria um post com `posts.status = upload_pending` e uma foto com `thumbnail_status = pending`.
+4. API controla as chaves dos objetos:
    - Original: `posts/{postId}/original.{ext}`
    - Thumbnail: `posts/{postId}/thumbnail.webp`
-5. API returns a signed upload URL for the original object.
-6. Frontend uploads directly to MinIO/R2.
-7. Frontend calls finalize.
-8. API verifies the expected object exists in MinIO/R2 before publishing.
-9. API marks the post `published` after that existence check, so it can appear in feeds even if the thumbnail is still pending.
-10. API writes outbox events such as `post.created` and `image.thumbnail.requested`.
-11. Worker validates actual object metadata and image readability before processing. If MIME/size/content metadata is invalid or mismatched, it can mark thumbnail generation failed and delete/cleanup the invalid upload asynchronously.
-12. Worker generates a 400x400 center-cropped WebP thumbnail with Sharp.
-13. Worker updates `photos.thumbnail_status` to `ready` or `failed`.
+5. API retorna uma URL assinada para upload do objeto original.
+6. Frontend envia o arquivo direto para MinIO/R2.
+7. Frontend chama finalize.
+8. API verifica se o objeto esperado existe no MinIO/R2 antes de publicar.
+9. API marca o post como `published` depois dessa verificação de existência, então ele pode aparecer nos feeds mesmo com thumbnail ainda pendente.
+10. API grava eventos de outbox como `post.created` e `image.thumbnail.requested`.
+11. Worker valida metadados reais do objeto e se a imagem pode ser lida antes de processar. Se MIME/tamanho/conteúdo for inválido ou não bater, ele pode marcar a geração de thumbnail como falha e limpar o upload inválido de forma assíncrona.
+12. Worker gera uma thumbnail WebP 400x400 com crop central usando Sharp.
+13. Worker atualiza `photos.thumbnail_status` para `ready` ou `failed`.
 
-Pending uploads expire after about 30 minutes. A scheduled worker/scanner marks old `upload_pending` rows as `upload_expired`, and object cleanup is performed asynchronously.
+Uploads pendentes expiram após cerca de 30 minutos. Um worker/scanner agendado marca linhas antigas `upload_pending` como `upload_expired`, e a limpeza de objetos é feita de forma assíncrona.
 
-### Delete post
+### Apagar post
 
-1. Owner requests deletion.
-2. API soft-deletes immediately by setting `posts.status = deleted` and `deleted_at`.
-3. Deleted posts are hidden from feeds, profiles, likes, and comments views.
-4. Existing likes/comments remain in PostgreSQL but are hidden through the deleted post status.
-5. API writes `post.deleted` to the outbox.
-6. Worker asynchronously deletes original and thumbnail objects from MinIO/R2.
+1. Dono solicita a remoção.
+2. API faz soft delete imediatamente definindo `posts.status = deleted` e `deleted_at`.
+3. Posts apagados ficam ocultos em feeds, perfis, likes e telas de comentários.
+4. Likes/comentários existentes continuam no PostgreSQL, mas ficam ocultos pelo status de post apagado.
+5. API grava `post.deleted` na outbox.
+6. Worker apaga de forma assíncrona os objetos original e thumbnail do MinIO/R2.
 
-### Feed and pagination
+### Feed e paginação
 
-- Feed is read directly from PostgreSQL.
-- Home feed includes posts from followed users plus the current user's own posts, filtered by `posts.status = published AND deleted_at IS NULL`.
-- Profile grid lists a user's published posts with the same visibility filter.
-- Cursor pagination uses `created_at` plus `id`/`post_id` as a stable tie-breaker.
-- Feed displays original images.
-- Profile grid displays thumbnails when ready and can fall back to original or placeholder while thumbnail is pending/failed.
+- Feed é lido diretamente do PostgreSQL.
+- Home feed inclui posts de usuários seguidos mais os posts do próprio usuário atual, filtrados por `posts.status = published AND deleted_at IS NULL`.
+- Grid de perfil lista posts publicados de um usuário com o mesmo filtro de visibilidade.
+- Paginação por cursor usa `created_at` mais `id`/`post_id` como critério estável de desempate.
+- Feed exibe imagens originais.
+- Grid de perfil exibe thumbnails quando prontas e pode voltar para original ou placeholder enquanto a thumbnail está pendente/falhou.
 
 ### Likes
 
-1. API inserts/deletes a row in `likes` with a uniqueness constraint on `(user_id, post_id)`.
-2. API transactionally increments/decrements `posts.likes_count`.
-3. Redis may cache hot like counts, but PostgreSQL remains authoritative.
-4. API creates a `post.liked` notification row unless the actor owns the post.
-5. API writes `post.liked` or `post.unliked` to the outbox.
+1. API insere/remove uma linha em `likes` com constraint de unicidade em `(user_id, post_id)`.
+2. API incrementa/decrementa `posts.likes_count` transacionalmente.
+3. Redis pode cachear contagens quentes de likes, mas PostgreSQL continua sendo a fonte autoritativa.
+4. API cria uma linha de notificação `post.liked`, exceto quando o ator é dono do post.
+5. API grava `post.liked` ou `post.unliked` na outbox.
 
-### Comments
+### Comentários
 
-- Comments are flat and cursor paginated.
-- Author can edit/delete own comments.
-- Post owner can delete comments on their post but cannot edit them.
-- Creating a comment creates a `comment.created` notification unless the actor owns the post.
-- Comment creation/deletion transactionally increments/decrements `posts.comments_count`.
-- Comment creation writes `comment.created` to the outbox.
+- Comentários são planos e paginados por cursor.
+- Autor pode editar/apagar os próprios comentários.
+- Dono do post pode apagar comentários no próprio post, mas não pode editá-los.
+- Criar comentário gera uma notificação `comment.created`, exceto quando o ator é dono do post.
+- Criação/remoção de comentário incrementa/decrementa `posts.comments_count` transacionalmente.
+- Criação de comentário grava `comment.created` na outbox.
 
 ### Follow/unfollow
 
-- API prevents self-follow.
-- Follow creates a unique `(follower_id, following_id)` relationship.
-- Follow creates a `user.followed` notification.
-- Follow/unfollow writes `user.followed` or `user.unfollowed` to the outbox.
+- API impede seguir a si mesmo.
+- Follow cria uma relação única `(follower_id, following_id)`.
+- Follow cria uma notificação `user.followed`.
+- Follow/unfollow grava `user.followed` ou `user.unfollowed` na outbox.
 
-### Notifications and SSE
+### Notificações e SSE
 
-1. API creates stored notification rows in PostgreSQL inside the main transaction for:
-   - `post.liked`, unless actor owns post.
-   - `comment.created`, unless actor owns post.
+1. API cria linhas de notificação armazenadas no PostgreSQL dentro da transação principal para:
+   - `post.liked`, exceto quando o ator é dono do post.
+   - `comment.created`, exceto quando o ator é dono do post.
    - `user.followed`.
-2. API writes the corresponding domain event to the outbox in the same transaction.
-3. The worker publishes the outbox event to RabbitMQ, consumes the relevant event, and publishes a lightweight live notification event to Redis Pub/Sub.
-4. All API instances subscribe to Redis Pub/Sub and forward matching events to connected users through SSE.
-5. Redis/SSE payloads include the durable `notification_id`.
-6. SSE is best-effort only. The core app does not depend on SSE being available, and Redis Pub/Sub message loss is acceptable because PostgreSQL notifications are authoritative.
-7. Clients recover after reconnect by fetching stored notifications with cursor pagination or a `since` notification id.
+2. API grava o evento de domínio correspondente na outbox, na mesma transação.
+3. Worker publica o evento da outbox no RabbitMQ, consome o evento relevante e publica uma notificação leve no Redis Pub/Sub.
+4. Todas as instâncias da API assinam o Redis Pub/Sub e encaminham eventos correspondentes para usuários conectados via SSE.
+5. Payloads Redis/SSE incluem o `notification_id` durável.
+6. SSE é apenas best-effort. O app principal não depende de SSE disponível, e perda de mensagem no Redis Pub/Sub é aceitável porque as notificações no PostgreSQL são autoritativas.
+7. Clientes se recuperam após reconectar buscando notificações armazenadas com paginação por cursor ou um id de notificação `since`.
 
-## Events, retry and idempotency
+## Eventos, retry e idempotência
 
-### Outbox pattern
+### Padrão outbox
 
-- API writes `outbox_events` in the same PostgreSQL transaction as the business state change.
-- Worker polls due pending rows using `next_attempt_at`, locks them with `processing`/`locked_at`/`locked_by`, and skips rows locked by another worker until the lock expires.
-- Worker publishes each event to RabbitMQ and waits for publisher confirms.
-- Worker marks rows as `published` only after RabbitMQ confirms the publish.
-- On publish failure or RabbitMQ downtime, worker increments `attempts`, records `last_error`, resets rows to retryable `pending`, and schedules `next_attempt_at`; rows are not terminal `failed` solely because RabbitMQ is down.
+- API grava `outbox_events` na mesma transação PostgreSQL da mudança de estado de negócio.
+- Worker busca linhas pendentes vencidas usando `next_attempt_at`, trava com `processing`/`locked_at`/`locked_by` e pula linhas travadas por outro worker até o lock expirar.
+- Worker publica cada evento no RabbitMQ e espera publisher confirms.
+- Worker marca linhas como `published` somente depois da confirmação do RabbitMQ.
+- Em falha de publish ou queda do RabbitMQ, o worker incrementa `attempts`, registra `last_error`, retorna as linhas para `pending` retryable e agenda `next_attempt_at`; linhas não viram `failed` terminal só porque o RabbitMQ caiu.
 
-Domain events:
+Eventos de domínio:
 
 - `image.thumbnail.requested`
 - `image.thumbnail.completed`
@@ -278,53 +278,53 @@ Domain events:
 - `user.followed`
 - `user.unfollowed`
 
-Minimal event payload contract:
+Contrato mínimo do payload de evento:
 
-- `event_id`, `type`, `aggregate_type`, `aggregate_id`, `occurred_at`, and `payload`.
-- `actor_id` when a user initiated the event.
-- `target_user_id` when the event is directed at one user, such as notifications.
-- `notification_id` when a durable notification row was created.
-- `image.thumbnail.completed` and `image.thumbnail.failed` are emitted for observability and downstream state-transition/audit consumers.
+- `event_id`, `type`, `aggregate_type`, `aggregate_id`, `occurred_at` e `payload`.
+- `actor_id` quando um usuário iniciou o evento.
+- `target_user_id` quando o evento é direcionado a um usuário, como em notificações.
+- `notification_id` quando uma linha de notificação durável foi criada.
+- `image.thumbnail.completed` e `image.thumbnail.failed` são emitidos para observabilidade e para consumidores downstream de transição de estado/auditoria.
 
-### RabbitMQ delivery
+### Entrega pelo RabbitMQ
 
-- RabbitMQ is at-least-once.
-- Consumers must be idempotent.
-- Retry schedule: 10 seconds, 30 seconds, 2 minutes, then dead-letter queue.
-- Delayed/backoff retries can be implemented with delayed exchanges or TTL retry queues.
-- Dead-letter queues are used for events that repeatedly fail and require inspection.
+- RabbitMQ é at-least-once.
+- Consumidores precisam ser idempotentes.
+- Agenda de retry: 10 segundos, 30 segundos, 2 minutos e depois dead-letter queue.
+- Retries com atraso/backoff podem ser implementados com delayed exchanges ou filas de retry com TTL.
+- Dead-letter queues são usadas para eventos que falham repetidamente e precisam de inspeção.
 
-### Idempotency
+### Idempotência
 
-- Each handler records `(event_id, handler_name, processed_at)` in `processed_events` only after successful handling, ideally in the same PostgreSQL transaction as any database effects.
-- Before handling, a consumer checks for an existing processed record and avoids duplicate database effects.
-- Duplicate deliveries are acknowledged without re-running side effects.
-- External/object-storage operations cannot share the database transaction, so they must be idempotent and tolerate duplicates, for example overwriting the same thumbnail key or deleting already-missing objects.
+- Cada handler registra `(event_id, handler_name, processed_at)` em `processed_events` apenas depois de processar com sucesso, idealmente na mesma transação PostgreSQL dos efeitos no banco.
+- Antes de processar, um consumidor verifica se já existe registro processado e evita efeitos duplicados no banco.
+- Entregas duplicadas são acknowledged sem rodar os efeitos colaterais de novo.
+- Operações externas/object-storage não compartilham a transação do banco, então precisam ser idempotentes e tolerar duplicatas, por exemplo sobrescrevendo a mesma chave de thumbnail ou apagando objetos que já não existem.
 
-## Failure behavior
+## Comportamento em falhas
 
-- PostgreSQL down: core API actions fail because PostgreSQL is the source of truth.
-- Redis down: cache is bypassed, SSE live delivery is lost, and MVP rate limiting fails open. Core PostgreSQL-backed actions continue where safe.
-- RabbitMQ down: API actions still commit to PostgreSQL and outbox rows remain pending. Events publish later when RabbitMQ returns.
-- Worker down: API actions still work. Thumbnails, cleanup, and other async side effects are delayed.
-- MinIO/R2 down during signed URL creation: upload creation/finalization fails until object storage is available.
-- MinIO/R2 down during thumbnail or cleanup: worker retries and eventually sends event to DLQ if failures persist.
-- SSE disconnected: user misses only live delivery. Stored notifications remain queryable.
-- Thumbnail generation failed: post remains published; profile grid can show placeholder/original fallback and mark thumbnail as failed.
+- PostgreSQL fora: ações centrais da API falham porque PostgreSQL é a fonte de verdade.
+- Redis fora: cache é ignorado, entrega ao vivo por SSE é perdida e o rate limiting do MVP falha em modo aberto. Ações centrais baseadas em PostgreSQL continuam quando for seguro.
+- RabbitMQ fora: ações da API ainda são commitadas no PostgreSQL e linhas da outbox ficam pendentes. Os eventos são publicados depois que o RabbitMQ volta.
+- Worker fora: ações da API continuam funcionando. Thumbnails, limpeza e outros efeitos assíncronos atrasam.
+- MinIO/R2 fora durante criação de URL assinada: criação/finalização de upload falha até o object storage voltar.
+- MinIO/R2 fora durante thumbnail ou limpeza: worker tenta novamente e, se as falhas persistirem, envia o evento para DLQ.
+- SSE desconectado: usuário perde apenas a entrega ao vivo. Notificações armazenadas continuam consultáveis.
+- Geração de thumbnail falhou: post continua publicado; grid de perfil pode mostrar placeholder/original como fallback e marcar a thumbnail como falha.
 
-## Local Docker Compose components
+## Componentes locais no Docker Compose
 
-Minimum local services:
+Serviços mínimos locais:
 
-- `postgres`: application database.
-- `redis`: cache, rate limiter storage, and Pub/Sub.
-- `rabbitmq`: event broker with management UI enabled for development.
-- `minio`: local S3-compatible object storage.
-- `api`: NestJS API process.
-- `worker`: NestJS worker process.
-- `web`: React/Vite frontend dev server.
+- `postgres`: banco de dados da aplicação.
+- `redis`: cache, armazenamento do rate limiter e Pub/Sub.
+- `rabbitmq`: broker de eventos com management UI habilitada para desenvolvimento.
+- `minio`: object storage local compatível com S3.
+- `api`: processo NestJS da API.
+- `worker`: processo NestJS do worker.
+- `web`: servidor de desenvolvimento do frontend React/Vite.
 
-Useful local ports may include:
+Portas locais úteis podem incluir:
 
 - API: `3000`
 - Web: `5173`
@@ -333,82 +333,32 @@ Useful local ports may include:
 - RabbitMQ: `5672`, management UI `15672`
 - MinIO API: `9000`, console `9001`
 
-## Cloudflare mapping for the presentation
+## Equivalência com serviços de nuvem
 
-- There is no production environment for this project. The Docker Compose setup is the version used in the presentation.
-- MinIO represents the object-storage role that Cloudflare R2 or S3 would have in a deployed version.
-- Public MinIO object URLs stand in for CDN-served media URLs.
-- Cloudflare Workers are not implemented.
-- PostgreSQL redundancy and replicas were left out to keep the demo focused.
+- O ambiente principal do projeto é o Docker Compose local.
+- MinIO representa o papel de object storage que Cloudflare R2 ou S3 teria em uma versão implantada.
+- URLs públicas de objetos no MinIO fazem o papel de URLs de mídia que poderiam ser servidas por CDN.
+- Cloudflare Workers não foram implementados.
+- Redundância e réplicas do PostgreSQL ficaram fora para manter o escopo do trabalho controlado.
 
-## Initial implementation milestones
+## Marcos iniciais de implementação
 
-1. Monorepo foundation
-   - Create `apps/api`, `apps/worker`, `apps/web`, and optional `packages/shared`.
-   - Add Docker Compose for PostgreSQL, Redis, RabbitMQ, and MinIO.
-2. Auth and users
-   - Implement registration, login, refresh rotation, logout, Argon2id hashing, and public profiles.
-3. Database schema
-   - Add Prisma models for users, sessions, posts, photos, follows, likes, comments, notifications, outbox, and processed events.
-4. Upload pipeline
-   - Implement create-upload, signed URL generation, finalize, post status transitions, and pending upload cleanup.
-5. Worker and outbox
-   - Implement outbox publisher, RabbitMQ consumers, retries, DLQ, and processed-event idempotency.
-6. Thumbnail processing
-   - Implement Sharp thumbnail generation and photo state updates.
-7. Social features
-   - Implement follow/unfollow, home feed, profile grid, likes, and flat comments.
-8. Notifications
-   - Implement stored notifications, Redis Pub/Sub fanout, and SSE delivery.
-9. Validation and documentation
-   - Add rate limits, DTO validation, Swagger/OpenAPI, and basic integration tests for key flows.
-
-## Reduced scope for a 2-person, 2-day build
-
-The full milestone list above does not fit a 2-day build. This reduced scope keeps
-the parts that matter most for the distributed-systems demo: outbox, async worker,
-idempotency and SSE fan-out. Less important product features are left out.
-
-Explicitly cut for the 2-day version: refresh token rotation (single JWT, no
-rotation), general rate limiting, Swagger/OpenAPI, integration tests, DLQ
-inspection tooling. Comments are optional, only if time remains.
-
-### Day 1 — Foundation and the distributed spine
-
-Person A — infra/backend:
-- Minimal monorepo: `apps/api`, `apps/worker` (`apps/web` can run outside
-  the compose via `vite dev` during development).
-- Docker Compose: postgres, redis, rabbitmq, minio, api, worker.
-- Prisma models: `users`, `posts`, `photos`, `follows`, `likes`,
-  `notifications`, `outbox_events`, `processed_events` (no
-  `refresh_sessions` — a single JWT without rotation).
-- Auth: register/login, Argon2id hashing, single JWT.
-
-Person B — upload pipeline and worker:
-- Create-upload endpoint → signed MinIO URL → finalize with outbox writes
-  (`post.created`, `image.thumbnail.requested`).
-- Worker: outbox publisher → RabbitMQ → thumbnail consumer → Sharp →
-  updates `photos.thumbnail_status`.
-- `processed_events` idempotency for that consumer.
-
-End-of-day goal: register, log in, upload a photo, watch it become a
-thumbnail, see it in the feed. That path already covers outbox + async
-worker + idempotency.
-
-### Day 2 — Close the distributed loop and build the UI
-
-Person A:
-- Likes: outbox event (`post.liked`) + stored notification.
-- Follow/unfollow (simple CRUD).
-- Feed with cursor pagination.
-
-Person B:
-- SSE + Redis Pub/Sub for at least the `post.liked` event → live
-  notification delivery.
-- Screens: feed, profile/grid, upload, notifications.
-- Prepare a failure demo: stop the worker or RabbitMQ during the presentation
-  and show that likes/uploads are still accepted. When the service returns,
-  the pending work is processed.
-
-Last hour: rehearse the presentation with at least one failure scenario
-(Redis or RabbitMQ going down). Prefer that over adding another small feature at the end.
+1. Base do monorepo
+   - Criar `apps/api`, `apps/worker`, `apps/web` e `packages/shared` opcional.
+   - Adicionar Docker Compose para PostgreSQL, Redis, RabbitMQ e MinIO.
+2. Auth e usuários
+   - Implementar cadastro, login, rotação de refresh, logout, hash Argon2id e perfis públicos.
+3. Schema do banco
+   - Adicionar models Prisma para usuários, sessões, posts, fotos, follows, likes, comentários, notificações, outbox e eventos processados.
+4. Pipeline de upload
+   - Implementar create-upload, geração de URL assinada, finalize, transições de status do post e limpeza de upload pendente.
+5. Worker e outbox
+   - Implementar publicador da outbox, consumidores RabbitMQ, retries, DLQ e idempotência por processed-event.
+6. Processamento de thumbnail
+   - Implementar geração de thumbnail com Sharp e atualização do estado da foto.
+7. Funcionalidades sociais
+   - Implementar follow/unfollow, home feed, grid de perfil, likes e comentários planos.
+8. Notificações
+   - Implementar notificações armazenadas, fanout com Redis Pub/Sub e entrega via SSE.
+9. Validação e documentação
+   - Adicionar rate limits, validação de DTOs, Swagger/OpenAPI e testes básicos de integração para fluxos principais.
