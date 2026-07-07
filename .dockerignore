@@ -1,0 +1,8 @@
+node_modules
+**/node_modules
+**/dist
+.git
+scratch-logs
+*.log
+.env
+apps/web/dist
