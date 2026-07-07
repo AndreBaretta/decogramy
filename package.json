@@ -1,0 +1,25 @@
+{
+  "name": "pastatop",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,worker -c blue,green \"npm run start:dev -w apps/api\" \"npm run start:dev -w apps/worker\"",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:web2": "npm run dev -w apps/web2",
+    "build:web2": "npm run build -w apps/web2",
+    "prisma:generate": "npm run prisma:generate -w packages/shared",
+    "prisma:migrate": "npm run prisma:migrate -w packages/shared",
+    "docker:up": "docker compose up -d postgres redis rabbitmq minio minio-init",
+    "docker:full": "docker compose up -d --build",
+    "docker:down": "docker compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^2.1.201"
+  }
+}

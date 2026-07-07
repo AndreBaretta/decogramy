@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PostStatus {
+  upload_pending
+  published
+  deleted
+  upload_expired
+}
+
+enum ThumbnailStatus {
+  pending
+  processing
+  ready
+  failed
+}
+
+enum OutboxStatus {
+  pending
+  processing
+  published
+  failed
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+  displayName  String
+  bio          String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  posts         Post[]
+  likes         Like[]
+  following     Follow[]       @relation("FollowerRelation")
+  followers     Follow[]       @relation("FollowingRelation")
+  notifications Notification[] @relation("NotificationRecipient")
+  actedOn       Notification[] @relation("NotificationActor")
+
+  @@map("users")
+}
+
+model Post {
+  id         String     @id @default(uuid())
+  userId     String
+  caption    String     @default("")
+  status     PostStatus @default(upload_pending)
+  likesCount Int        @default(0)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  deletedAt  DateTime?
+
+  user   User    @relation(fields: [userId], references: [id])
+  photo  Photo?
+  likes  Like[]
+
+  @@index([userId, createdAt])
+  @@index([status, deletedAt, createdAt])
+  @@map("posts")
+}
+
+model Photo {
+  id               String          @id @default(uuid())
+  postId           String          @unique
+  originalKey      String
+  thumbnailKey     String
+  mimeType         String
+  sizeBytes        Int
+  thumbnailStatus  ThumbnailStatus @default(pending)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  post Post @relation(fields: [postId], references: [id])
+
+  @@map("photos")
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("FollowerRelation", fields: [followerId], references: [id])
+  following User @relation("FollowingRelation", fields: [followingId], references: [id])
+
+  @@id([followerId, followingId])
+  @@map("follows")
+}
+
+model Like {
+  userId    String
+  postId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  post Post @relation(fields: [postId], references: [id])
+
+  @@id([userId, postId])
+  @@map("likes")
+}
+
+model Notification {
+  id         String    @id @default(uuid())
+  userId     String
+  actorId    String
+  type       String
+  entityType String
+  entityId   String
+  payload    Json      @default("{}")
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user  User @relation("NotificationRecipient", fields: [userId], references: [id])
+  actor User @relation("NotificationActor", fields: [actorId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid())
+  eventType     String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  status        OutboxStatus @default(pending)
+  attempts      Int          @default(0)
+  nextAttemptAt DateTime     @default(now())
+  lockedAt      DateTime?
+  lockedBy      String?
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  publishedAt   DateTime?
+
+  @@index([status, nextAttemptAt])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId     String
+  handlerName String
+  processedAt DateTime @default(now())
+
+  @@id([eventId, handlerName])
+  @@map("processed_events")
+}
